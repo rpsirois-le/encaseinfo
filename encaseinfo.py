@@ -1,4 +1,4 @@
-import argparse, pprint, codecs
+import argparse, pprint, codecs, os, re
 pp = pprint.PrettyPrinter( indent=4 )
 
 info = {
@@ -31,7 +31,7 @@ def parseSectionDescriptor( file ):
 
     info['sections'].append( descriptor )
 
-    pp.pprint( descriptor )
+    #pp.pprint( descriptor )
 
     if 'volume' == sec_type:
         # 94 bytes
@@ -48,6 +48,9 @@ def parseSectionDescriptor( file ):
 
         sectors = int.from_bytes( file.read( 4 ), 'little' )
         print( '\tSectors: {}'.format( sectors ) )
+
+        total_bytes = sectors * bytes_per_sector
+        print( '\tTotal bytes: {} ({} GB)'.format( total_bytes, total_bytes/(1024**3) ) )
 
         file.read( 20 ) # reserved
         file.read( 45 ) # padding
@@ -85,13 +88,31 @@ def parseSectionDescriptor( file ):
 
     return sec_type
 
-def parse( file ):
-    parseHeader( file )
+def getNextSegment( prev ):
+    # this will only work for X01 - X99
+    parts = os.path.splitext( prev )
+    path = parts[0]
+    ext = parts[1]
+    prefix = ''.join( re.findall( '[a-zA-Z]+', ext ) )
+    n = int( ''.join( [x for x in ext if x.isdigit()] ) )
+    return '{}.{}{}'.format( path, prefix, str( n+1 ).rjust( 2, '0' ) )
 
+def parse( filename, file ):
+    parseHeader( file )
     section_type = ''
 
-    while not 'done' == section_type:
+    while (not 'done' == section_type) or (not 'next' == section_type):
         section_type = parseSectionDescriptor( file )
+
+        if 'next' == section_type:
+            return False, getNextSegment( filename )
+        elif 'done' == section_type:
+            return True, None
+
+def loadSegment( filename ):
+    print( 'Loaded', filename )
+    with open( filename, mode='rb' ) as bin_ewf:
+        return parse( filename, bin_ewf )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -102,6 +123,11 @@ if __name__ == '__main__':
     parser.add_argument( 'filename' )
 
     args = parser.parse_args()
-    
-    with open( args.filename, mode='rb' ) as bin_ewf:
-        parse( bin_ewf )
+
+    done = False
+    nextSegment = args.filename
+
+    while not done:
+        done, nextSegment = loadSegment( nextSegment )
+
+    quit()
